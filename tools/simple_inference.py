@@ -1,19 +1,21 @@
 import argparse
-import glob
-from collections.abc import Generator
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Union
 
 import numpy as np
 import open3d  # noqa: F401
+import pandas as pd
 import torch
+from pointcloud_loader import PointCloudLoader
+from tqdm import tqdm
+from visual_utils import open3d_vis_utils as V  # noqa: F401
+
 from pcdet.config import cfg, cfg_from_yaml_file
 from pcdet.datasets import DatasetTemplate
 from pcdet.models import build_network, load_data_to_gpu
 from pcdet.utils import common_utils
-from pypcd4 import PointCloud
-
-from visual_utils import open3d_vis_utils as V
 
 OPEN3D_FLAG = True
 
@@ -21,11 +23,14 @@ OPEN3D_FLAG = True
 @dataclass
 class NameSpace:
     input_dir: Path
+    output_dir: Path
     config: Path
     checkpoint: Path
+    mapping_json: Union[Path, None] = None
+
 
 class SimpleInference:
-    def __init__(self, config: Path, checkpoint: Path) -> None:
+    def __init__(self, config: Path, checkpoint: Path, mapping_json: Union[Path, None]) -> None:
         cfg_from_yaml_file(config, cfg)
         self.logger = common_utils.create_logger()
         self.dataset = DatasetTemplate(
@@ -39,6 +44,33 @@ class SimpleInference:
         self.model.load_params_from_file(filename=checkpoint, logger=self.logger, to_cpu=True)
         self.model.cuda()
         self.model.eval()
+
+        # Load mapping from JSON file
+        self.mapping = None
+        if mapping_json is not None:
+            mapping_to_class = json.load(open(mapping_json))
+            self.mapping = {}
+            for mapping, class_list in mapping_to_class.items():
+                for class_name in class_list:
+                    self.mapping[class_name] = int(mapping)
+
+    def _map_labels(self, pred_dicts: list[dict[str, torch.Tensor]]) -> list[dict[str, torch.Tensor]]:
+        if self.mapping is None:
+            return pred_dicts
+
+        device = pred_dicts[0]["pred_boxes"].device
+        pred_boxes = torch.empty((0, 9), dtype=torch.float32, device=device)
+        pred_scores = torch.empty((0,), dtype=torch.float32, device=device)
+        pred_labels = torch.empty((0,), dtype=torch.int64, device=device)
+        for pred_dict in pred_dicts:
+            for box, score, label in zip(pred_dict["pred_boxes"], pred_dict["pred_scores"], pred_dict["pred_labels"]):
+                class_name = self.dataset.class_names[label - 1]  # Assuming labels are 1-indexed
+                if class_name in self.mapping:
+                    pred_boxes = torch.cat((pred_boxes, box.unsqueeze(0)), dim=0)
+                    pred_scores = torch.cat((pred_scores, score.unsqueeze(0)), dim=0)
+                    pred_labels = torch.cat((pred_labels, torch.tensor(self.mapping[class_name], device=device).unsqueeze(0)), dim=0)
+
+        return [{"pred_boxes": pred_boxes, "pred_scores": pred_scores, "pred_labels": pred_labels}]
 
     def inference(self, points: np.ndarray) -> list[dict[str, torch.Tensor]]:
         """Inference single frame point cloud.
@@ -65,108 +97,18 @@ class SimpleInference:
 
         with torch.no_grad():
             pred_dicts, _ = self.model.forward(data_dict)
+            pred_dicts = self._map_labels(pred_dicts)
 
         return pred_dicts
-
-
-class PointCloudLoader:
-    def __init__(self, file_path: Path) -> None:
-        self.AVAILABLE_EXTENSIONS = [".bin", ".npy", ".pcd"]
-
-        self.file_path = file_path
-        self.pointcloud_path_list = []
-        if self.file_path.is_dir():
-            for ext in self.AVAILABLE_EXTENSIONS:
-                self.pointcloud_path_list.extend(glob.glob(str(self.file_path / f"*{ext}")))
-            self.pointcloud_path_list = sorted(self.pointcloud_path_list)
-        else:  # noqa: PLR5501
-            if self.file_path.suffix.lower() in self.AVAILABLE_EXTENSIONS:
-                self.pointcloud_path_list = [self.file_path]
-            else:
-                self.pointcloud_path_list = []
-
-    def get_pointcloud(self) -> Generator[np.ndarray, None, None]:
-        """Load point cloud from file.
-
-        Returns
-        -------
-        points : np.ndarray
-            (N, 4) array. Each point is represented by (x, y, z, intensity).
-        """
-        for pointcloud_path in self.pointcloud_path_list:
-            file_extension = Path(pointcloud_path).suffix.lower()
-            if file_extension == ".bin":
-                point = self.load_bin(pointcloud_path)
-            elif file_extension == ".npy":
-                point = self.load_npy(pointcloud_path)
-            elif file_extension == ".pcd":
-                point = self.load_pcd(pointcloud_path)
-            else:
-                continue
-
-            yield point
-
-    @staticmethod
-    def load_bin(bin_path: Path) -> np.ndarray:
-        """Load point cloud from .bin file.
-        
-        Parameters
-        ----------
-        bin_path : Path
-            Path to the .bin file. Each point is represented by (x, y, z, intensity, ring_index).
-
-        Returns
-        -------
-        points : np.ndarray
-            (N, 4) array. Each point is represented by (x, y, z, intensity).
-        """
-        points = np.fromfile(bin_path, dtype=np.float32).reshape(-1, 5)
-
-        return points[:, :4]
-
-    @staticmethod
-    def load_npy(npy_path: Path) -> np.ndarray:
-        """Load point cloud from .npy file.
-        
-        Parameters
-        ----------
-        npy_path : Path
-            Path to the .npy file. Each point is represented by (x, y, z, intensity).
-
-        Returns
-        -------
-        points : np.ndarray
-            (N, 4) array. Each point is represented by (x, y, z, intensity).
-        """
-        points = np.load(npy_path)
-
-        return points
-
-    @staticmethod
-    def load_pcd(pcd_path: Path) -> np.ndarray:
-        """Load point cloud from .pcd file.
-        
-        Parameters
-        ----------
-        pcd_path : Path
-            Path to the .pcd file. Each point includes (x, y, z, intensity).
-
-        Returns
-        -------
-        points : np.ndarray
-            (N, 4) array. Each point is represented by (x, y, z, intensity).
-        """
-        pc = PointCloud.from_path(pcd_path)
-        points = pc.numpy(("x", "y", "z", "intensity"))
-
-        return points
 
 
 def parse_config() -> NameSpace:
     parser = argparse.ArgumentParser(description="arg parser")
     parser.add_argument("input_dir", type=Path, help="specify the point cloud data file or directory")
+    parser.add_argument("output_dir", type=Path, help="specify the output directory for results")
     parser.add_argument("config", type=Path, help="specify the config for demo")
     parser.add_argument("checkpoint", type=Path, help="specify the pretrained model")
+    parser.add_argument("--mapping_json", type=Path, default=None, help="specify the class mapping file")
 
     args = parser.parse_args(namespace=NameSpace)
 
@@ -175,19 +117,35 @@ def parse_config() -> NameSpace:
 
 def main() -> None:
     args = parse_config()
-    simple_inference = SimpleInference(config=args.config, checkpoint=args.checkpoint)
-    pointcloud_loader = PointCloudLoader(file_path=args.input_dir)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    for points in pointcloud_loader.get_pointcloud():
+    simple_inference = SimpleInference(config=args.config, checkpoint=args.checkpoint, mapping_json=args.mapping_json)
+    pointcloud_loader = PointCloudLoader(file_path=args.input_dir, use_topic_list=["/lidar0/pandar_packets"])
+
+    for points, timestamp in tqdm(pointcloud_loader.get_pointcloud(), total=len(pointcloud_loader)):
+        # Inference
         pred_dicts = simple_inference.inference(points)
 
-        V.draw_scenes(
-            points=points,
-            ref_boxes=pred_dicts[0]["pred_boxes"],
-            ref_scores=pred_dicts[0]["pred_scores"],
-            ref_labels=pred_dicts[0]["pred_labels"],
-            threshold=0.5,
-        )
+        # Extract predictions from the first (and only) batch element
+        pred_boxes = pred_dicts[0]["pred_boxes"].cpu().numpy()
+        pred_scores = pred_dicts[0]["pred_scores"].cpu().numpy()
+        pred_labels = pred_dicts[0]["pred_labels"].cpu().numpy()
+
+        # Create DataFrame and save to CSV
+        results = np.hstack((pred_boxes, pred_scores[:, None]))
+        df = pd.DataFrame(results, columns=["x", "y", "z", "l", "w", "h", "yaw", "pitch", "roll", "score"])
+        df.insert(0, "timestamp", np.full((len(pred_labels), 1), timestamp / 10**9))
+        df.insert(1, "class", pred_labels)
+        df = df.sort_values(by="score", ascending=False)
+        df.to_csv(args.output_dir / f"{timestamp}.csv", index=False, float_format="%.9f")
+
+        # V.draw_scenes(
+        #     points=points,
+        #     ref_boxes=pred_dicts[0]["pred_boxes"],
+        #     ref_scores=pred_dicts[0]["pred_scores"],
+        #     ref_labels=pred_dicts[0]["pred_labels"],
+        #     threshold=0.5,
+        # )
 
 
 if __name__ == "__main__":
