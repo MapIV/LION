@@ -9,10 +9,17 @@ import matplotlib
 import numpy as np
 
 box_colormap = [
-    [1, 1, 1],
-    [0, 1, 0],
-    [0, 1, 1],
-    [1, 1, 0],
+    [1, 0, 1],      # 0: Magenta (マゼンタ)
+    [0, 1, 0],      # 1: Green (緑)
+    [0, 1, 1],      # 2: Cyan (シアン)
+    [1, 1, 0],      # 3: Yellow (黄)
+    [1, 0, 0],      # 4: Red (赤)
+    [0, 0, 1],      # 5: Blue (青)
+    [1, 1, 0],# 6: Gray (灰色)
+    [1, 0.5, 0],    # 7: Orange (オレンジ)
+    [0, 0.5, 0],    # 8: Dark Green (深緑)
+    [0.5, 0, 0.5],  # 9: Purple (紫)
+    [1, 1, 1],      # 10: White (白)
 ]
 
 
@@ -35,13 +42,14 @@ def get_coor_colors(obj_labels):
     return label_rgba
 
 
-def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None, point_colors=None, draw_origin=True):
+def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None, point_colors=None, draw_origin=True, threshold=0.0):
     if isinstance(points, torch.Tensor):
         points = points.cpu().numpy()
     if isinstance(gt_boxes, torch.Tensor):
         gt_boxes = gt_boxes.cpu().numpy()
     if isinstance(ref_boxes, torch.Tensor):
         ref_boxes = ref_boxes.cpu().numpy()
+    ref_boxes = ref_boxes[ref_scores.cpu().numpy() > threshold]
 
     vis = open3d.visualization.Visualizer()
     vis.create_window()

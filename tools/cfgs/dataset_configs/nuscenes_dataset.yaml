@@ -1,5 +1,5 @@
 DATASET: 'NuScenesDataset'
-DATA_PATH: '../data/nuscenes'
+DATA_PATH: '/mnt/dlbox/public_data/nuscenes/'
 
 VERSION: 'v1.0-trainval'
 MAX_SWEEPS: 10
@@ -56,8 +56,8 @@ DATA_AUGMENTOR:
 
 POINT_FEATURE_ENCODING: {
     encoding_type: absolute_coordinates_encoding,
-    used_feature_list: ['x', 'y', 'z', 'intensity', 'timestamp'],
-    src_feature_list: ['x', 'y', 'z', 'intensity', 'timestamp'],
+    used_feature_list: ['x', 'y', 'z', 'intensity', 'ring_index'],
+    src_feature_list: ['x', 'y', 'z', 'intensity', 'ring_index'],
 }
 
 
