@@ -47,7 +47,7 @@ class PointCloudLoader:
         else:
             self.data_size = len(self.pointcloud_path_list)
 
-    def get_pointcloud(self) -> Generator[list[np.ndarray, float], None, None]:
+    def get_pointcloud(self) -> Generator[list[np.ndarray, str, float], None, None]:
         """Load point cloud from file.
 
         Returns
@@ -67,7 +67,7 @@ class PointCloudLoader:
                     point = self.load_pcd(pointcloud_path)
                 cnt += 1
 
-                yield point, cnt
+                yield point, "", cnt
 
         elif self.type == "rosbag":
             typestore = get_typestore(Stores.ROS2_FOXY)
@@ -87,7 +87,8 @@ class PointCloudLoader:
 
                     pc = PointCloud.from_msg(msg)
                     points = pc.numpy(("x", "y", "z", "intensity"))
-                    yield points, timestamp
+
+                    yield points, connection.topic, timestamp
 
     @staticmethod
     def load_bin(bin_path: Path) -> np.ndarray:
