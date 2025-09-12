@@ -9,7 +9,7 @@ from visual_utils import open3d_vis_utils as V  # noqa: F401
 
 class OutputManager:
     @staticmethod
-    def save_results_to_csv(result: dict[str, torch.Tensor], topic_name: str, timestamp: int, output_dir: Path) -> None:
+    def save_results_to_csv(result: dict[str, torch.Tensor], timestamp: int, output_dir: Path) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Extract predictions from the first (and only) batch element
@@ -23,12 +23,12 @@ class OutputManager:
         df.insert(0, "timestamp", np.full((len(pred_labels), 1), timestamp / 10**9))
         df.insert(1, "class", pred_labels)
         df = df.sort_values(by="score", ascending=False)
-        df.to_csv(output_dir / topic_name / f"{timestamp}.csv", index=False, float_format="%.9f")
+        df.to_csv(output_dir / f"{timestamp}.csv", index=False, float_format="%.9f")
     
     @staticmethod
-    def save_results_to_rosbag(result: dict[str, torch.Tensor], topic_name: str, timestamp: int, rosbag_writer: RosbagWriter) -> None:
+    def save_results_to_rosbag(result: dict[str, torch.Tensor], topic_name: str, timestamp: int, rosbag_writer: RosbagWriter, frame_id: str) -> None:
         rosbag_writer.add_connections(topic_name)
-        rosbag_writer.write(result, topic_name, timestamp)
+        rosbag_writer.write(result, topic_name, timestamp, frame_id=frame_id)
 
     @staticmethod
     def visualize_results(

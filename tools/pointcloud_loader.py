@@ -9,9 +9,16 @@ from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
 from rosbags.typesys.stores.ros2_foxy import sensor_msgs__msg__PointCloud2
 
+from tools.rosbag_writer import RosbagWriter
+
 
 class PointCloudLoader:
-    def __init__(self, file_path: Path, use_topic_list: Union[list[str], None] = None) -> None:
+    def __init__(
+        self,
+        file_path: Path,
+        use_topic_list: Union[list[str], None] = None,
+        rosbag_writer: Union[RosbagWriter, None] = None,
+    ) -> None:
         self.AVAILABLE_EXTENSIONS = [".bin", ".npy", ".pcd"]
 
         self.file_path = file_path
@@ -19,6 +26,8 @@ class PointCloudLoader:
         self.pointcloud_path_list = []
         self.use_topic_list = use_topic_list
         self.data_size = 0
+        self.rosbag_writer = rosbag_writer
+        self.frame_id = "base_link"
 
         # Get list of point cloud files
         if self.file_path.is_dir():
@@ -30,7 +39,7 @@ class PointCloudLoader:
                 self.pointcloud_path_list = [self.file_path]
             else:
                 self.pointcloud_path_list = []
-        
+
         # Check if the file is a rosbag
         if len(self.pointcloud_path_list) == 0:
             try:
@@ -67,7 +76,7 @@ class PointCloudLoader:
                     point = self.load_pcd(pointcloud_path)
                 cnt += 1
 
-                yield point, "", cnt
+                yield point, cnt
 
         elif self.type == "rosbag":
             typestore = get_typestore(Stores.ROS2_FOXY)
@@ -81,19 +90,21 @@ class PointCloudLoader:
 
                 # Read messages
                 for connection, timestamp, rawdata in reader.messages(connections=connections):
-                    msg: sensor_msgs__msg__PointCloud2 = reader.deserialize(
-                        rawdata, connection.msgtype
-                    )
+                    msg: sensor_msgs__msg__PointCloud2 = reader.deserialize(rawdata, connection.msgtype)
+                    if self.rosbag_writer:
+                        self.rosbag_writer.add_pointcloud_connection(connection.topic)
+                        self.rosbag_writer.write_pointcloud(msg, connection.topic, timestamp)
 
                     pc = PointCloud.from_msg(msg)
                     points = pc.numpy(("x", "y", "z", "intensity"))
+                    self.frame_id = msg.header.frame_id
 
-                    yield points, connection.topic, timestamp
+                    yield points, timestamp
 
     @staticmethod
     def load_bin(bin_path: Path) -> np.ndarray:
         """Load point cloud from .bin file.
-        
+
         Parameters
         ----------
         bin_path : Path
@@ -111,7 +122,7 @@ class PointCloudLoader:
     @staticmethod
     def load_npy(npy_path: Path) -> np.ndarray:
         """Load point cloud from .npy file.
-        
+
         Parameters
         ----------
         npy_path : Path
@@ -129,7 +140,7 @@ class PointCloudLoader:
     @staticmethod
     def load_pcd(pcd_path: Path) -> np.ndarray:
         """Load point cloud from .pcd file.
-        
+
         Parameters
         ----------
         pcd_path : Path
@@ -144,6 +155,6 @@ class PointCloudLoader:
         points = pc.numpy(("x", "y", "z", "intensity"))
 
         return points
-    
+
     def __len__(self) -> int:
         return self.data_size

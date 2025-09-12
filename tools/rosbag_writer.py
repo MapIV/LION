@@ -6,6 +6,7 @@ from rosbags.interfaces import Connection
 from rosbags.rosbag1 import Writer as Writer1
 from rosbags.rosbag2 import Writer as Writer2
 from rosbags.typesys import Stores, get_types_from_msg, get_typestore
+from rosbags.typesys.stores.ros2_foxy import sensor_msgs__msg__PointCloud2
 from scipy.spatial.transform import Rotation
 
 
@@ -33,7 +34,9 @@ class RosbagWriter:
         )
 
         self.DetectedObjects = self.typestore.types["autoware_perception_msgs/msg/DetectedObjects"]
+        self.PointCloud2 = self.typestore.types["sensor_msgs/msg/PointCloud2"]
         self.msgtype = self.DetectedObjects.__msgtype__
+        self.pointcloud_msgtype = self.PointCloud2.__msgtype__
         self.connection_dict: dict[str, Connection] = {}
         self.seq = -1
 
@@ -60,6 +63,12 @@ class RosbagWriter:
     def add_connections(self, topic_name: str) -> None:
         if topic_name not in self.connection_dict:
             connection = self.writer.add_connection(topic_name, self.msgtype, typestore=self.typestore)
+
+            self.connection_dict[topic_name] = connection
+
+    def add_pointcloud_connection(self, topic_name: str) -> None:
+        if topic_name not in self.connection_dict:
+            connection = self.writer.add_connection(topic_name, self.pointcloud_msgtype, typestore=self.typestore)
 
             self.connection_dict[topic_name] = connection
 
@@ -152,6 +161,13 @@ class RosbagWriter:
                 timestamp,
                 self.typestore.serialize_cdr(message, self.msgtype),
             )
+
+    def write_pointcloud(self, msg: sensor_msgs__msg__PointCloud2, topic_name: str, timestamp: int) -> None:
+        self.writer.write(
+            self.connection_dict[topic_name],
+            timestamp,
+            self.typestore.serialize_cdr(msg, self.pointcloud_msgtype),
+        )
 
     def close(self) -> None:
         self.writer.close()

@@ -28,6 +28,8 @@ class NameSpace:
     mapping_json: Union[Path, None]
     score_threshold: float
     output_format: Literal["CSV", "ROS1", "ROS2", "VISUALIZE"]
+    input_topic_name: Union[str, None]
+    output_topic_name: Union[str, None]
 
 
 class SimpleInference:
@@ -69,7 +71,9 @@ class SimpleInference:
                 if class_name in self.mapping:
                     pred_boxes = torch.cat((pred_boxes, box.unsqueeze(0)), dim=0)
                     pred_scores = torch.cat((pred_scores, score.unsqueeze(0)), dim=0)
-                    pred_labels = torch.cat((pred_labels, torch.tensor(self.mapping[class_name], device=device).unsqueeze(0)), dim=0)
+                    pred_labels = torch.cat(
+                        (pred_labels, torch.tensor(self.mapping[class_name], device=device).unsqueeze(0)), dim=0
+                    )
 
         return [{"pred_boxes": pred_boxes, "pred_scores": pred_scores, "pred_labels": pred_labels}]
 
@@ -103,9 +107,7 @@ class SimpleInference:
         return pred_dicts[0]
 
     @staticmethod
-    def filter(
-        pred_dict: dict[str, torch.Tensor], score_threshold: float = 0.0
-    ) -> dict[str, torch.Tensor]:
+    def filter(pred_dict: dict[str, torch.Tensor], score_threshold: float = 0.0) -> dict[str, torch.Tensor]:
         """Filter boxes with score threshold.
 
         Parameters
@@ -135,6 +137,7 @@ class SimpleInference:
 
         return filtered_pred_dict
 
+
 def parse_config() -> NameSpace:
     parser = argparse.ArgumentParser(description="arg parser")
     parser.add_argument("input_dir", type=Path, help="specify the point cloud data file or directory")
@@ -150,7 +153,18 @@ def parse_config() -> NameSpace:
         choices=["CSV", "ROS1", "ROS2", "VISUALIZE"],
         help="specify the output format",
     )
-    parser.add_argument("--use_topic_list", type=str, nargs="*", default=None, help="specify the topic names to read point clouds from when input_dir is a rosbag file")
+    parser.add_argument(
+        "--input_topic_name",
+        type=str,
+        default=None,
+        help="specify the topic names to read point clouds from when input_dir is a rosbag file",
+    )
+    parser.add_argument(
+        "--output_topic_name",
+        type=str,
+        default=None,
+        help="specify the topic name to write point clouds to when output_format is ROS1 or ROS2",
+    )
 
     args = parser.parse_args(namespace=NameSpace)
 
@@ -162,6 +176,10 @@ def verify_args(args: NameSpace) -> None:
         if args.output_dir.suffix != ".bag":
             raise ValueError("When output_format is 'ros1', output_dir must be a directory ending with .bag")
 
+    if args.output_format in ("ROS1", "ROS2"):
+        if not args.output_topic_name:
+            raise ValueError("When output_format is 'ros1' or 'ros2', output_topic_name must be specified")
+
     if not 0 <= args.score_threshold <= 1:
         raise ValueError("score_threshold must be between 0 and 1")
 
@@ -170,27 +188,41 @@ def main() -> None:
     args = parse_config()
     verify_args(args)
 
-    simple_inference = SimpleInference(config=args.config, checkpoint=args.checkpoint, mapping_json=args.mapping_json)
-    pointcloud_loader = PointCloudLoader(file_path=args.input_dir, use_topic_list=args.use_topic_list)
-
     # pre-process
+    simple_inference = SimpleInference(config=args.config, checkpoint=args.checkpoint, mapping_json=args.mapping_json)
     if args.output_format in ("ROS1", "ROS2"):
         from rosbag_writer import RosbagWriter
+
         rosbag_writer = RosbagWriter(args.output_format, args.output_dir)
+        pointcloud_loader = PointCloudLoader(
+            file_path=args.input_dir,
+            use_topic_list=[args.input_topic_name] if args.input_topic_name else None,
+            rosbag_writer=rosbag_writer,
+        )
+    else:
+        pointcloud_loader = PointCloudLoader(
+            file_path=args.input_dir, use_topic_list=[args.input_topic_name] if args.input_topic_name else None
+        )
 
     # main-process
-    for points, topic_name, timestamp in tqdm(pointcloud_loader.get_pointcloud(), total=len(pointcloud_loader)):
+    for points, timestamp in tqdm(pointcloud_loader.get_pointcloud(), total=len(pointcloud_loader)):
         # Inference
         pred_dict = simple_inference.inference(points)
         result = simple_inference.filter(pred_dict, args.score_threshold)
 
         if args.output_format == "CSV":
-            OutputManager.save_results_to_csv(result=result, topic_name=topic_name, timestamp=timestamp, output_dir=args.output_dir)
+            OutputManager.save_results_to_csv(result=result, timestamp=timestamp, output_dir=args.output_dir)
         elif args.output_format in ("ROS1", "ROS2"):
-            OutputManager.save_results_to_rosbag(result=result, topic_name=topic_name, timestamp=timestamp, rosbag_writer=rosbag_writer)
+            OutputManager.save_results_to_rosbag(
+                result=result,
+                topic_name=args.output_topic_name,
+                timestamp=timestamp,
+                rosbag_writer=rosbag_writer,
+                frame_id=pointcloud_loader.frame_id,
+            )
         elif args.output_format == "VISUALIZE":
             OutputManager.visualize_results(points=points, result=result, score_threshold=args.score_threshold)
-    
+
     # post-process
     if args.output_format in ("ROS1", "ROS2"):
         rosbag_writer.close()
