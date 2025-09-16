@@ -1,5 +1,6 @@
 import argparse
 import glob
+from pypcd4 import PointCloud
 from pathlib import Path
 
 try:
@@ -15,13 +16,15 @@ import numpy as np
 import torch
 
 from pcdet.config import cfg, cfg_from_yaml_file
-from pcdet.datasets import DatasetTemplate
+from pcdet.datasets import DatasetTemplate, build_dataloader
 from pcdet.models import build_network, load_data_to_gpu
 from pcdet.utils import common_utils
 
 
+AVAILABLE_EXTENSIONS = ['.bin', '.npy', '.pcd']
+
 class DemoDataset(DatasetTemplate):
-    def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None, ext='.bin'):
+    def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None):
         """
         Args:
             root_path:
@@ -33,9 +36,14 @@ class DemoDataset(DatasetTemplate):
         super().__init__(
             dataset_cfg=dataset_cfg, class_names=class_names, training=training, root_path=root_path, logger=logger
         )
-        self.root_path = root_path
-        self.ext = ext
-        data_file_list = glob.glob(str(root_path / f'*{self.ext}')) if self.root_path.is_dir() else [self.root_path]
+        self.root_path = Path(root_path)
+        data_file_list = []
+        if self.root_path.is_dir():
+            for ext in AVAILABLE_EXTENSIONS:
+                data_file_list.extend(glob.glob(str(root_path / f'*{ext}')))
+        else:
+            if self.root_path.suffix in AVAILABLE_EXTENSIONS:
+                data_file_list = [self.root_path]
 
         data_file_list.sort()
         self.sample_file_list = data_file_list
@@ -44,10 +52,20 @@ class DemoDataset(DatasetTemplate):
         return len(self.sample_file_list)
 
     def __getitem__(self, index):
-        if self.ext == '.bin':
-            points = np.fromfile(self.sample_file_list[index], dtype=np.float32).reshape(-1, 4)
-        elif self.ext == '.npy':
+        file_extension = Path(self.sample_file_list[index]).suffix
+        if file_extension == '.bin':
+            points = np.fromfile(self.sample_file_list[index], dtype=np.float32).reshape(-1, 5)
+            points[:, 4] = 0.0  # set ring index to 0
+        elif file_extension == '.npy':
             points = np.load(self.sample_file_list[index])
+        elif file_extension == '.pcd':
+            pc = PointCloud.from_path(self.sample_file_list[index])
+            points = np.zeros((pc.pc_data.shape[0], 5), dtype=np.float32)
+            points[:, 0] = pc.pc_data['x']
+            points[:, 1] = pc.pc_data['y']
+            points[:, 2] = pc.pc_data['z']
+            points[:, 3] = pc.pc_data['intensity']
+            points[:, 4] = 0.0  # set ring index to 0
         else:
             raise NotImplementedError
 
@@ -67,7 +85,6 @@ def parse_config():
     parser.add_argument('--data_path', type=str, default='demo_data',
                         help='specify the point cloud data file or directory')
     parser.add_argument('--ckpt', type=str, default=None, help='specify the pretrained model')
-    parser.add_argument('--ext', type=str, default='.bin', help='specify the extension of your point cloud data file')
 
     args = parser.parse_args()
 
@@ -82,7 +99,7 @@ def main():
     logger.info('-----------------Quick Demo of OpenPCDet-------------------------')
     demo_dataset = DemoDataset(
         dataset_cfg=cfg.DATA_CONFIG, class_names=cfg.CLASS_NAMES, training=False,
-        root_path=Path(args.data_path), ext=args.ext, logger=logger
+        root_path=Path(args.data_path), logger=logger
     )
     logger.info(f'Total number of samples: \t{len(demo_dataset)}')
 
@@ -99,7 +116,8 @@ def main():
 
             V.draw_scenes(
                 points=data_dict['points'][:, 1:], ref_boxes=pred_dicts[0]['pred_boxes'],
-                ref_scores=pred_dicts[0]['pred_scores'], ref_labels=pred_dicts[0]['pred_labels']
+                ref_scores=pred_dicts[0]['pred_scores'], ref_labels=pred_dicts[0]['pred_labels'],
+                threshold=0.4
             )
 
             if not OPEN3D_FLAG:

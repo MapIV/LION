@@ -1,0 +1,24 @@
+{
+    "1": [
+        "car"
+    ],
+    "2": [
+        "truck"
+    ],
+    "3": [
+        "bus"
+    ],
+    "4": [
+        "construction_vehicle",
+        "trailer"
+    ],
+    "5": [
+        "motorcycle"
+    ],
+    "6": [
+        "bicycle"
+    ],
+    "7": [
+        "pedestrian"
+    ]
+}

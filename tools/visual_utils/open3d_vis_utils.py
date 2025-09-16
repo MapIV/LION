@@ -3,17 +3,10 @@ Open3d visualization tool box
 Written by Jihan YANG
 All rights preserved from 2021 - present.
 """
-import open3d
-import torch
 import matplotlib
 import numpy as np
-
-box_colormap = [
-    [1, 1, 1],
-    [0, 1, 0],
-    [0, 1, 1],
-    [1, 1, 0],
-]
+import open3d
+import torch
 
 
 def get_coor_colors(obj_labels):
@@ -101,11 +94,32 @@ def translate_boxes_to_open3d_instance(gt_boxes):
 
 
 def draw_box(vis, gt_boxes, color=(0, 1, 0), ref_labels=None, score=None):
+    def color_map(N: int = 256, normalized: bool = False) -> np.ndarray[int]:
+        def bitget(byteval: int, idx: int) -> bool:
+            return (byteval & (1 << idx)) != 0
+
+        dtype = "float32" if normalized else "uint8"
+        cmap = np.zeros((N, 3), dtype=dtype)
+        for i in range(N):
+            r = g = b = 0
+            c = i
+            for j in range(8):
+                r = r | (bitget(c, 0) << 7 - j)
+                g = g | (bitget(c, 1) << 7 - j)
+                b = b | (bitget(c, 2) << 7 - j)
+                c = c >> 3
+
+            cmap[i] = np.array([b, g, r])
+
+        cmap = cmap / 255 if normalized else cmap
+        return cmap
+    
     for i in range(gt_boxes.shape[0]):
         line_set, box3d = translate_boxes_to_open3d_instance(gt_boxes[i])
         if ref_labels is None:
             line_set.paint_uniform_color(color)
         else:
+            box_colormap = color_map(N=ref_labels.max() + 1, normalized=True)
             line_set.paint_uniform_color(box_colormap[ref_labels[i]])
 
         vis.add_geometry(line_set)

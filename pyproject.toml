@@ -1,0 +1,16 @@
+[tool.ruff]
+target-version = "py308"
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "PLR", "B", "ANN"]
+ignore = ["ANN201", "PLR2004", "PLR0913"]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+docstring-code-line-length = 60
