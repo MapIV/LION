@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import torch
 from rosbag_writer import RosbagWriter
+from pointcloud_loader import PointCloudData
 from visual_utils import open3d_vis_utils as V  # noqa: F401
 
 
@@ -24,16 +25,24 @@ class OutputManager:
         df.insert(1, "class", pred_labels)
         df = df.sort_values(by="score", ascending=False)
         df.to_csv(output_dir / f"{timestamp}.csv", index=False, float_format="%.9f")
-    
-    @staticmethod
-    def save_results_to_rosbag(result: dict[str, torch.Tensor], topic_name: str, timestamp: int, rosbag_writer: RosbagWriter, frame_id: str) -> None:
-        rosbag_writer.add_connections(topic_name)
-        rosbag_writer.write(result, topic_name, timestamp, frame_id=frame_id)
 
     @staticmethod
-    def visualize_results(
-        points: np.ndarray, result: dict[str, torch.Tensor], score_threshold: float
+    def save_results_to_rosbag(
+        result: dict[str, torch.Tensor],
+        pointcloud: PointCloudData,
+        topic_name: str,
+        rosbag_writer: RosbagWriter,
     ) -> None:
+        # Add pointcloud to rosbag
+        rosbag_writer.add_pointcloud_connection(pointcloud.topic_name)
+        rosbag_writer.write_pointcloud(pointcloud)
+
+        # Add detections to rosbag
+        rosbag_writer.add_connections(topic_name)
+        rosbag_writer.write(result, topic_name, pointcloud.timestamp, frame_id=pointcloud.frame_id)
+
+    @staticmethod
+    def visualize_results(points: np.ndarray, result: dict[str, torch.Tensor], score_threshold: float) -> None:
         V.draw_scenes(
             points=points,
             ref_boxes=result["pred_boxes"],

@@ -6,8 +6,9 @@ from rosbags.interfaces import Connection
 from rosbags.rosbag1 import Writer as Writer1
 from rosbags.rosbag2 import Writer as Writer2
 from rosbags.typesys import Stores, get_types_from_msg, get_typestore
-from rosbags.typesys.stores.ros2_foxy import sensor_msgs__msg__PointCloud2
 from scipy.spatial.transform import Rotation
+
+from pointcloud_loader import PointCloudData
 
 
 class RosbagWriter:
@@ -162,12 +163,86 @@ class RosbagWriter:
                 self.typestore.serialize_cdr(message, self.msgtype),
             )
 
-    def write_pointcloud(self, msg: sensor_msgs__msg__PointCloud2, topic_name: str, timestamp: int) -> None:
-        self.writer.write(
-            self.connection_dict[topic_name],
-            timestamp,
-            self.typestore.serialize_cdr(msg, self.pointcloud_msgtype),
+    def write_pointcloud(self, pointcloud: PointCloudData) -> None:
+        # writer setup
+        Header = self.typestore.types["std_msgs/msg/Header"]
+        Time = self.typestore.types["builtin_interfaces/msg/Time"]
+        PointField = self.typestore.types["sensor_msgs/msg/PointField"]
+        
+        message = self.PointCloud2(
+            header=Header(
+                stamp=Time(sec=int(pointcloud.timestamp // 10**9), nanosec=int(pointcloud.timestamp % 10**9)),
+                frame_id=pointcloud.frame_id,
+                seq=self._get_seq(),
+            ),
+            height=1,
+            width=pointcloud.data.shape[0],
+            is_bigendian=False,
+            point_step=16,
+            row_step=pointcloud.data.shape[0] * 16,
+            is_dense=True,
+            data=pointcloud.data.reshape(-1).view(np.uint8),
+            fields=[
+                PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+                PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+                PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+                PointField(name="intensity", offset=12, datatype=PointField.FLOAT32, count=1),
+            ],
         )
+
+        if self.ros == "ROS1":
+            message = self.PointCloud2(
+                header=Header(
+                    stamp=Time(sec=int(pointcloud.timestamp // 10**9), nanosec=int(pointcloud.timestamp % 10**9)),
+                    frame_id=pointcloud.frame_id,
+                    seq=self._get_seq(),
+                ),
+                height=1,
+                width=pointcloud.data.shape[0],
+                is_bigendian=False,
+                point_step=16,
+                row_step=pointcloud.data.shape[0] * 16,
+                is_dense=True,
+                data=pointcloud.data.reshape(-1).view(np.uint8),
+                fields=[
+                    PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+                    PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+                    PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+                    PointField(name="intensity", offset=12, datatype=PointField.FLOAT32, count=1),
+                ],
+            )
+
+            self.writer.write(
+                self.connection_dict[pointcloud.topic_name],
+                pointcloud.timestamp,
+                self.typestore.serialize_ros1(message, self.pointcloud_msgtype),
+            )
+        elif self.ros == "ROS2":
+            message = self.PointCloud2(
+                header=Header(
+                    stamp=Time(sec=int(pointcloud.timestamp // 10**9), nanosec=int(pointcloud.timestamp % 10**9)),
+                    frame_id=pointcloud.frame_id,
+                ),
+                height=1,
+                width=pointcloud.data.shape[0],
+                is_bigendian=False,
+                point_step=16,
+                row_step=pointcloud.data.shape[0] * 16,
+                is_dense=True,
+                data=pointcloud.data.reshape(-1).view(np.uint8),
+                fields=[
+                    PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+                    PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+                    PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+                    PointField(name="intensity", offset=12, datatype=PointField.FLOAT32, count=1),
+                ],
+            )
+
+            self.writer.write(
+                self.connection_dict[pointcloud.topic_name],
+                pointcloud.timestamp,
+                self.typestore.serialize_cdr(message, self.pointcloud_msgtype),
+            )
 
     def close(self) -> None:
         self.writer.close()

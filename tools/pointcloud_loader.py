@@ -1,5 +1,6 @@
 import glob
 from collections.abc import Generator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Union
 
@@ -9,7 +10,13 @@ from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
 from rosbags.typesys.stores.ros2_foxy import sensor_msgs__msg__PointCloud2
 
-from tools.rosbag_writer import RosbagWriter
+
+@dataclass
+class PointCloudData:
+    data: np.ndarray
+    timestamp: int
+    frame_id: str = "base_link"
+    topic_name: str = "/lidar/panda_packets"
 
 
 class PointCloudLoader:
@@ -17,7 +24,6 @@ class PointCloudLoader:
         self,
         file_path: Path,
         use_topic_list: Union[list[str], None] = None,
-        rosbag_writer: Union[RosbagWriter, None] = None,
     ) -> None:
         self.AVAILABLE_EXTENSIONS = [".bin", ".npy", ".pcd"]
 
@@ -26,8 +32,6 @@ class PointCloudLoader:
         self.pointcloud_path_list = []
         self.use_topic_list = use_topic_list
         self.data_size = 0
-        self.rosbag_writer = rosbag_writer
-        self.frame_id = "base_link"
 
         # Get list of point cloud files
         if self.file_path.is_dir():
@@ -56,27 +60,37 @@ class PointCloudLoader:
         else:
             self.data_size = len(self.pointcloud_path_list)
 
-    def get_pointcloud(self) -> Generator[list[np.ndarray, str, float], None, None]:
+    def get_pointcloud(self) -> Generator[PointCloudData, None, None]:
         """Load point cloud from file.
 
         Returns
         -------
-        points : np.ndarray
-            (N, 4) array. Each point is represented by (x, y, z, intensity).
+        pointcloud : PointCloudData
+            Pointcloud data. This contains:
+                - data: (N, 4) array. Each point is represented by (x, y, z, intensity).
+                - timestamp: int. Timestamp in nanoseconds.
+                - pred_labels: str. Frame ID of the point cloud.
         """
-        cnt = 0
         if self.type == "file":
             for pointcloud_path in self.pointcloud_path_list:
-                file_extension = Path(pointcloud_path).suffix.lower()
+                pointcloud_path = Path(pointcloud_path)
+                file_extension = pointcloud_path.suffix.lower()
+                timestamp = pointcloud_path.stem.split("_")[-1]
+                if "." in timestamp:
+                    sec = int(timestamp.split(".")[0])
+                    nsec = int(timestamp.split(".")[1].ljust(9, "0"))
+                    timestamp = sec * 10**9 + nsec
+                else:
+                    timestamp = int(timestamp.ljust(19, "0"))
+
                 if file_extension == ".bin":
                     point = self.load_bin(pointcloud_path)
                 elif file_extension == ".npy":
                     point = self.load_npy(pointcloud_path)
                 elif file_extension == ".pcd":
                     point = self.load_pcd(pointcloud_path)
-                cnt += 1
 
-                yield point, cnt
+                yield PointCloudData(data=point, timestamp=timestamp)
 
         elif self.type == "rosbag":
             typestore = get_typestore(Stores.ROS2_FOXY)
@@ -91,15 +105,12 @@ class PointCloudLoader:
                 # Read messages
                 for connection, timestamp, rawdata in reader.messages(connections=connections):
                     msg: sensor_msgs__msg__PointCloud2 = reader.deserialize(rawdata, connection.msgtype)
-                    if self.rosbag_writer:
-                        self.rosbag_writer.add_pointcloud_connection(connection.topic)
-                        self.rosbag_writer.write_pointcloud(msg, connection.topic, timestamp)
 
                     pc = PointCloud.from_msg(msg)
                     points = pc.numpy(("x", "y", "z", "intensity"))
-                    self.frame_id = msg.header.frame_id
+                    timestamp = msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec
 
-                    yield points, timestamp
+                    yield PointCloudData(data=points, timestamp=timestamp, frame_id=msg.header.frame_id, topic_name=connection.topic)
 
     @staticmethod
     def load_bin(bin_path: Path) -> np.ndarray:

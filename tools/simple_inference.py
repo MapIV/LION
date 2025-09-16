@@ -197,7 +197,6 @@ def main() -> None:
         pointcloud_loader = PointCloudLoader(
             file_path=args.input_dir,
             use_topic_list=[args.input_topic_name] if args.input_topic_name else None,
-            rosbag_writer=rosbag_writer,
         )
     else:
         pointcloud_loader = PointCloudLoader(
@@ -205,23 +204,26 @@ def main() -> None:
         )
 
     # main-process
-    for points, timestamp in tqdm(pointcloud_loader.get_pointcloud(), total=len(pointcloud_loader)):
+    for pointcloud in tqdm(pointcloud_loader.get_pointcloud(), total=len(pointcloud_loader)):
         # Inference
-        pred_dict = simple_inference.inference(points)
+        pred_dict = simple_inference.inference(pointcloud.data)
         result = simple_inference.filter(pred_dict, args.score_threshold)
 
         if args.output_format == "CSV":
-            OutputManager.save_results_to_csv(result=result, timestamp=timestamp, output_dir=args.output_dir)
+            OutputManager.save_results_to_csv(
+                result=result, timestamp=pointcloud.timestamp, output_dir=args.output_dir
+            )
         elif args.output_format in ("ROS1", "ROS2"):
             OutputManager.save_results_to_rosbag(
                 result=result,
+                pointcloud=pointcloud,
                 topic_name=args.output_topic_name,
-                timestamp=timestamp,
                 rosbag_writer=rosbag_writer,
-                frame_id=pointcloud_loader.frame_id,
             )
         elif args.output_format == "VISUALIZE":
-            OutputManager.visualize_results(points=points, result=result, score_threshold=args.score_threshold)
+            OutputManager.visualize_results(
+                points=pointcloud.data, result=result, score_threshold=args.score_threshold
+            )
 
     # post-process
     if args.output_format in ("ROS1", "ROS2"):
