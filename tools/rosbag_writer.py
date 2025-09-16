@@ -168,27 +168,6 @@ class RosbagWriter:
         Header = self.typestore.types["std_msgs/msg/Header"]
         Time = self.typestore.types["builtin_interfaces/msg/Time"]
         PointField = self.typestore.types["sensor_msgs/msg/PointField"]
-        
-        message = self.PointCloud2(
-            header=Header(
-                stamp=Time(sec=int(pointcloud.timestamp // 10**9), nanosec=int(pointcloud.timestamp % 10**9)),
-                frame_id=pointcloud.frame_id,
-                seq=self._get_seq(),
-            ),
-            height=1,
-            width=pointcloud.data.shape[0],
-            is_bigendian=False,
-            point_step=16,
-            row_step=pointcloud.data.shape[0] * 16,
-            is_dense=True,
-            data=pointcloud.data.reshape(-1).view(np.uint8),
-            fields=[
-                PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
-                PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
-                PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
-                PointField(name="intensity", offset=12, datatype=PointField.FLOAT32, count=1),
-            ],
-        )
 
         if self.ros == "ROS1":
             message = self.PointCloud2(
