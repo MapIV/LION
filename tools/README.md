@@ -4,7 +4,7 @@
 
 [日本語版 README はこちら](https://github.com/MapIV/LION/tree/main/tools/README-ja.md)
 
-# Imagefourmer
+# LION
 
 ## Installation
 
