@@ -110,7 +110,9 @@ class PointCloudLoader:
                     points = pc.numpy(("x", "y", "z", "intensity"))
                     timestamp = msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec
 
-                    yield PointCloudData(data=points, timestamp=timestamp, frame_id=msg.header.frame_id, topic_name=connection.topic)
+                    yield PointCloudData(
+                        data=points, timestamp=timestamp, frame_id=msg.header.frame_id, topic_name=connection.topic
+                    )
 
     @staticmethod
     def load_bin(bin_path: Path) -> np.ndarray:

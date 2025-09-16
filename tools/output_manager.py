@@ -25,7 +25,7 @@ class OutputManager:
         euler_angles = pred_boxes[:, 6:9]  # yaw, pitch, roll
         euler_angles[:, 1:3] = 0  # pitch and roll are set to zero for accuracy
         if euler_angles.shape[0] != 0:
-            rotations = Rotation.from_euler('zyx', euler_angles)
+            rotations = Rotation.from_euler("zyx", euler_angles)
             quaternions = rotations.as_quat()  # Returns [x, y, z, w] format
         else:
             quaternions = np.empty((0, 4))
@@ -35,17 +35,17 @@ class OutputManager:
         df = pd.DataFrame(
             csv_result,
             columns=[
-            "x_position",
-            "y_position",
-            "z_position",
-            "x_dimension",
-            "y_dimension",
-            "z_dimension",
-            "quaternion_x",
-            "quaternion_y",
-            "quaternion_z",
-            "quaternion_w",
-            "confidence",
+                "x_position",
+                "y_position",
+                "z_position",
+                "x_dimension",
+                "y_dimension",
+                "z_dimension",
+                "quaternion_x",
+                "quaternion_y",
+                "quaternion_z",
+                "quaternion_w",
+                "confidence",
             ],
         )
         df.insert(0, "timestamp", np.full((len(pred_labels), 1), timestamp / 10**9))
