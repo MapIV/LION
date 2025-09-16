@@ -100,7 +100,7 @@ class RosbagWriter:
         for pred_box, pred_score, pred_label in zip(pred_boxes, pred_scores, pred_labels):
             classification = ObjectClassification(label=pred_label, probability=pred_score)
 
-            r = Rotation.from_euler("zyx", [pred_box[6], pred_box[7], pred_box[8]])
+            r = Rotation.from_euler("zyx", [pred_box[6], 0, 0]) # pitch and roll are set to zero for accuracy
             q = r.as_quat()
             pose = Pose(
                 position=Point(x=pred_box[0], y=pred_box[1], z=pred_box[2]),
