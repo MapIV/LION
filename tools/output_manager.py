@@ -12,6 +12,17 @@ from visual_utils import open3d_vis_utils as V  # noqa: F401
 class OutputManager:
     @staticmethod
     def save_results_to_csv(result: dict[str, torch.Tensor], timestamp: int, output_dir: Path) -> None:
+        """Save detection results to a CSV file.
+
+        Parameters
+        ----------
+        result : dict[str, torch.Tensor]
+            Inference results containing bounding boxes, scores, and labels.
+        timestamp : int
+            Timestamp in nanoseconds.
+        output_dir : Path
+            Directory to save the output CSV file.
+        """
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Extract predictions from the first (and only) batch element
@@ -60,6 +71,19 @@ class OutputManager:
         topic_name: str,
         rosbag_writer: RosbagWriter,
     ) -> None:
+        """Save detection results to a ROS bag.
+
+        Parameters
+        ----------
+        result : dict[str, torch.Tensor]
+            Inference results containing bounding boxes, scores, and labels.
+        pointcloud : PointCloudData
+            Point cloud data to associate with the detections.
+        topic_name : str
+            Topic name for the detections.
+        rosbag_writer : RosbagWriter
+            ROS bag writer instance.
+        """
         # Add pointcloud to rosbag
         rosbag_writer.add_pointcloud_connection(pointcloud.topic_name)
         rosbag_writer.write_pointcloud(pointcloud)
@@ -69,11 +93,19 @@ class OutputManager:
         rosbag_writer.write(result, topic_name, pointcloud.timestamp, frame_id=pointcloud.frame_id)
 
     @staticmethod
-    def visualize_results(points: np.ndarray, result: dict[str, torch.Tensor], score_threshold: float) -> None:
+    def visualize_results(points: np.ndarray, result: dict[str, torch.Tensor]) -> None:
+        """Visualize point cloud and detection results.
+
+        Parameters
+        ----------
+        points : np.ndarray
+            (N, 4) array. Each point is represented by (x, y, z, intensity).
+        result : dict[str, torch.Tensor]
+            Inference results containing bounding boxes, scores, and labels.
+        """
         V.draw_scenes(
             points=points,
             ref_boxes=result["pred_boxes"],
             ref_scores=result["pred_scores"],
             ref_labels=result["pred_labels"],
-            threshold=score_threshold,
         )

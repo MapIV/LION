@@ -58,6 +58,21 @@ class SimpleInference:
                     self.mapping[class_name] = int(mapping)
 
     def _map_labels(self, pred_dicts: list[dict[str, torch.Tensor]]) -> list[dict[str, torch.Tensor]]:
+        """Map predicted labels to new labels using the provided mapping.
+        
+        Parameters
+        ----------
+        pred_dicts : list[dict[str, torch.Tensor]]
+            List of prediction results. Each dictionary contains:
+                - pred_boxes: (M, 9) array in (x, y, z, dx, dy, dz, yaw, pitch, roll) format.
+                - pred_scores: (M,) array. Score of each box.
+                - pred_labels: (M,) array. Label of each box.
+        
+        Returns
+        -------
+        mapped_pred_dicts : list[dict[str, torch.Tensor]]
+            List of prediction results with mapped labels. If no mapping is provided, returns the original predictions.
+        """
         if self.mapping is None:
             return pred_dicts
 
@@ -88,7 +103,7 @@ class SimpleInference:
         Returns
         -------
         pred_dict : dict[str, torch.Tensor]
-            Prediction results. Each dict contains:
+            Prediction results. This contains:
                 - pred_boxes: (M, 9) array in (x, y, z, dx, dy, dz, yaw, pitch, roll) format.
                 - pred_scores: (M,) array. Score of each box.
                 - pred_labels: (M,) array. Label of each box.
@@ -112,8 +127,8 @@ class SimpleInference:
 
         Parameters
         ----------
-        pred_dicts : list[dict[str, torch.Tensor]]
-            Prediction results. Each dict contains:
+        pred_dict : dict[str, torch.Tensor]
+            Prediction results. This contains:
                 - pred_boxes: (M, 9) array in (x, y, z, dx, dy, dz, yaw, pitch, roll) format.
                 - pred_scores: (M,) array. Score of each box.
                 - pred_labels: (M,) array. Label of each box.
@@ -138,7 +153,13 @@ class SimpleInference:
         return filtered_pred_dict
 
 
-def parse_config() -> NameSpace:
+def parse_args() -> NameSpace:
+    """Parse input arguments.
+    Returns
+    -------
+    args : NameSpace
+        Parsed input arguments.
+    """
     parser = argparse.ArgumentParser(description="arg parser")
     parser.add_argument("input_dir", type=Path, help="specify the point cloud data file or directory")
     parser.add_argument("output_dir", type=Path, help="specify the output directory for results")
@@ -172,6 +193,11 @@ def parse_config() -> NameSpace:
 
 
 def verify_args(args: NameSpace) -> None:
+    """Verify the validity of input arguments.
+    Parameters
+    ----------
+    args : NameSpace
+        Input arguments."""
     if args.output_format == "ROS1":
         if args.output_dir.suffix != ".bag":
             raise ValueError("When output_format is 'ros1', output_dir must be a directory ending with .bag")
@@ -185,7 +211,7 @@ def verify_args(args: NameSpace) -> None:
 
 
 def main() -> None:
-    args = parse_config()
+    args = parse_args()
     verify_args(args)
 
     # pre-process
@@ -221,9 +247,7 @@ def main() -> None:
                 rosbag_writer=rosbag_writer,
             )
         elif args.output_format == "VISUALIZE":
-            OutputManager.visualize_results(
-                points=pointcloud.data, result=result, score_threshold=args.score_threshold
-            )
+            OutputManager.visualize_results(points=pointcloud.data, result=result)
 
     # post-process
     if args.output_format in ("ROS1", "ROS2"):
