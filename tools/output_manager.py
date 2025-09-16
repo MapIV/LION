@@ -23,6 +23,7 @@ class OutputManager:
         positions = pred_boxes[:, :3]  # x, y, z positions
         dimensions = pred_boxes[:, 3:6]  # x, y, z dimensions
         euler_angles = pred_boxes[:, 6:9]  # yaw, pitch, roll
+        euler_angles[:, 1:3] = 0  # pitch and roll are set to zero for accuracy
         if euler_angles.shape[0] != 0:
             rotations = Rotation.from_euler('zyx', euler_angles)
             quaternions = rotations.as_quat()  # Returns [x, y, z, w] format
